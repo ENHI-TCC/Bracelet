@@ -1,9 +1,5 @@
-/*
- Autores: Victoria Chemin e Wallace Bescrovaine
-*/
 
-//Bibliotecas
-#include <FS.h>          //Esta precisa ser a primeira referência
+#include <FS.h>          //Esta precisa ser a primeira referência, ou nada dará certo e sua vida será arruinada. kkk
 #include <ESP8266WiFi.h> //https://github.com/esp8266/Arduino
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
@@ -11,29 +7,26 @@
 #include <ArduinoJson.h> //https://github.com/bblanchon/ArduinoJson
 #include <PubSubClient.h>
 #include <EEPROM.h>
+#include <SPI.h>
 
-//Se descomentar esta linha vai habilitar a 'impressão' na porta serial
-#define DEBUG
+// #define DEBUG //Se descomentar esta linha vai habilitar a 'impressão' na porta serial
+
+#define LF char(10) // Defini quebra de linha LF (line feed)
 
 //Coloque os valores padrões aqui, porém na interface eles poderão ser substituídos.
-#define servidor_mqtt "192.168.100.24"          //URL do servidor MQTT
-#define servidor_mqtt_porta "1883"              //Porta do servidor (a mesma deve ser informada na variável abaixo)
-#define servidor_mqtt_usuario "tcc"             //Usuário
-#define servidor_mqtt_senha "tcc123"            //Senha
-#define mqtt_topico_sub1 "bracelet/cry/led"     //Tópico para subscrever o comando a ser dado no pino declarado abaixo
-#define mqtt_topico_sub2 "bracelet/cry/vibrate" //Tópico para subscrever o comando a ser dado no pino declarado abaixo
-#define mqtt_topico_sub3 "bracelet/cry/stop"    //Tópico para subscrever o comando a ser dado no pino declarado abaixo
-
+#define servidor_mqtt "192.168.100.33" //URL do servidor MQTT
+#define servidor_mqtt_porta "1883"     //Porta do servidor (a mesma deve ser informada na variável abaixo)
+#define servidor_mqtt_usuario "tcc"    //Usuário
+#define servidor_mqtt_senha "123"      //Senha
+#define mqtt_topico_sub "bracelet/cry" //Tópico para subscrever o comando a ser dado no pino declarado abaixo
 //Declaração do pino que será utilizado e a memória alocada para armazenar o status deste pino na EEPROM
-#define pino1 12 //Pino que executara a acao dado no topico "bracelet/cry/led" e terá seu status informado no tópico "pulseira/choro"
-#define pino2 14 //Pino que executara a acao dado no topico "bracelet/cry/vibrate" e terá seu status informado no tópico "bracelet/choro"
-#define pino3 16 //Pino que executara a acao dado no topico "bracelet/cry/button" e terá seu status informado no tópico "bracelet/choro"
+#define pino 12  //Pino que executara a acao dado no topico "bracelet/cry"
+#define pino2 14 //Pino que executara a acao dado no topico "bracelet/cry"
+#define pino3 16 //Pino que executara a acao dado no topico "bracelet/cry"
 
-// Declaração de variavel de status do BTN
-int verifyStat = 0;
+#define memoria_alocada 6 //Define o quanto sera alocado na EEPROM (valores entre 4 e 4096 bytes)
 
-// Define de memória
-#define memoria_alocada 4 //Define o quanto sera alocado na EEPROM (valores entre 4 e 4096 bytes)
+#define desliga "desliga"
 
 WiFiClient espClient;           //Instância do WiFiClient
 PubSubClient client(espClient); //Passando a instância do WiFiClient para a instância do PubSubClient
@@ -41,25 +34,20 @@ PubSubClient client(espClient); //Passando a instância do WiFiClient para a ins
 uint8_t statusAnt = 0;      //Variável que armazenará o status do pino que foi gravado anteriormente na EEPROM
 bool precisaSalvar = false; //Flag para salvar os dados
 
+int verifyStat = 0; // Declaração de variavel de status do BTN
+
 //Função para imprimir na porta serial
-void imprimirSerial(bool linha, String mensagem)
+void imprimirSerial(String mensagem)
 {
 #ifdef DEBUG
-  if (linha)
-  {
-    Serial.println(mensagem);
-  }
-  else
-  {
-    Serial.print(mensagem);
-  }
+  Serial.print(mensagem);
 #endif
 }
 
 //Função de retorno para notificar sobre a necessidade de salvar as configurações
 void precisaSalvarCallback()
 {
-  imprimirSerial(true, "As configuracoes tem que ser salvas.");
+  imprimirSerial("As configuracoes tem que ser salvas.\n");
   precisaSalvar = true;
 }
 
@@ -69,24 +57,22 @@ void reconectar()
   //Repete até conectar
   while (!client.connected())
   {
-    imprimirSerial(false, "Tentando conectar ao servidor MQTT...");
+    imprimirSerial("Tentando conectar ao servidor MQTT...");
 
     //Tentativa de conectar. Se o MQTT precisa de autenticação, será chamada a função com autenticação, caso contrário, chama a sem autenticação.
     bool conectado = strlen(servidor_mqtt_usuario) > 0 ? client.connect("ESP8266Client", servidor_mqtt_usuario, servidor_mqtt_senha) : client.connect("ESP8266Client");
 
     if (conectado)
     {
-      imprimirSerial(true, "Conectado!");
+      imprimirSerial("Conectado!\n");
       //Subscreve para monitorar os comandos recebidos
-      client.subscribe(mqtt_topico_sub1, 1); //QoS 1
-      client.subscribe(mqtt_topico_sub2, 1); //QoS 1
-      client.subscribe(mqtt_topico_sub3, 1); //QoS 1
+      client.subscribe(mqtt_topico_sub, 1); //QoS 1
     }
     else
     {
-      imprimirSerial(false, "Falhou ao tentar conectar. Codigo: ");
-      imprimirSerial(false, String(client.state()).c_str());
-      imprimirSerial(true, " tentando novamente em 5 segundos");
+      imprimirSerial("Falhou ao tentar conectar. Codigo: ");
+      imprimirSerial(String(client.state()).c_str());
+      imprimirSerial(" tentando novamente em 5 segundos\n");
       //Aguarda 5 segundos para tentar novamente
       delay(5000);
     }
@@ -103,7 +89,7 @@ void lerStatusAnteriorPino()
     statusAnt = 0; //Provavelmente é a primeira leitura da EEPROM, passando o valor padrão para o pino.
     EEPROM.write(0, statusAnt);
   }
-  digitalWrite(pino1, statusAnt);
+  digitalWrite(pino, statusAnt);
   EEPROM.end();
 }
 
@@ -113,13 +99,14 @@ void gravarStatusPino(uint8_t statusPino)
   EEPROM.begin(memoria_alocada);
   EEPROM.write(0, statusPino);
   EEPROM.end();
-  EEPROM.end();
 }
 
 void cancelaAlerta()
 {
-  client.publish("bracelet/cry/stop", "stop");
-  imprimirSerial(true, "cancelando alerta");
+
+  // client.publish("bracelet/cry", "desliga");
+  client.publish("bracelet/cry", desliga);
+  // imprimirSerial(true, "cancelando alerta");
 }
 
 //Função que será chamada ao receber mensagem do servidor MQTT
@@ -131,75 +118,75 @@ void retorno(char *topico, byte *mensagem, unsigned int tamanho)
   strMensagem.toLowerCase();
   //float f = s.toFloat();
 
-  imprimirSerial(false, "Mensagem recebida! Topico: ");
-  imprimirSerial(false, topico);
-  imprimirSerial(false, ". Tamanho: ");
-  imprimirSerial(false, String(tamanho).c_str());
-  imprimirSerial(false, ". Mensagem: ");
-  imprimirSerial(true, strMensagem);
+  imprimirSerial("Mensagem recebida! Topico: ");
+  imprimirSerial(topico);
+  imprimirSerial(". Tamanho: ");
+  imprimirSerial(String(tamanho).c_str());
+  imprimirSerial(". Mensagem: ");
+  imprimirSerial(strMensagem + "\n");
 
   //Executando o comando solicitado
-  imprimirSerial(false, "Status do pino antes de processar o comando: ");
-  imprimirSerial(true, String(digitalRead(pino1)).c_str());
+  imprimirSerial("Status do pino antes de processar o comando: ");
+  imprimirSerial(String(digitalRead(pino)).c_str() + LF);
 
-  if (strMensagem == "chorou")
+  if (strMensagem == "liga")
   {
-    imprimirSerial(true, "Colocando o pino em stado ALTO...");
-    digitalWrite(pino1, HIGH);
+    imprimirSerial("Colocando o pino em stado ALTO...\n");
+    digitalWrite(pino, HIGH);
     digitalWrite(pino2, HIGH);
     gravarStatusPino(HIGH);
   }
-  else if (strMensagem == "stop")
+  else if (strMensagem == "desliga")
   {
-    imprimirSerial(true, "Colocando o pino em stado BAIXO...");
-    digitalWrite(pino1, LOW);
+    imprimirSerial("Colocando o pino em stado BAIXO...\n");
+    digitalWrite(pino, LOW);
     digitalWrite(pino2, LOW);
     gravarStatusPino(LOW);
   }
   else
   {
-    imprimirSerial(true, "Comando nao cadastrado...");
+    imprimirSerial("Trocando o estado do pino...\n");
+    digitalWrite(pino, !digitalRead(pino));
+    gravarStatusPino(digitalRead(pino));
   }
 
-  imprimirSerial(false, "Status do pino depois de processar o comando: ");
-  imprimirSerial(true, String(digitalRead(pino1)).c_str());
+  imprimirSerial("Status do pino depois de processar o comando: ");
+  imprimirSerial(String(digitalRead(pino)).c_str() + LF);
 }
 
 //Função inicial (será executado SOMENTE quando ligar o ESP)
 void setup()
 {
 #ifdef DEBUG
-  Serial.begin(9600);
+  Serial.begin(115200);
 #endif
-  imprimirSerial(true, "...");
-
+  imprimirSerial("...\n");
   //Fazendo o pino ser de saída, pois ele irá "controlar" algo.
-  pinMode(pino1, OUTPUT);
+  pinMode(pino, OUTPUT);
   pinMode(pino2, OUTPUT);
   pinMode(pino3, INPUT);
 
   //Formatando a memória interna
   //(descomente a linha abaixo enquanto estiver testando e comente ou apague quando estiver pronto)
-  //SPIFFS.format();
+  // SPIFFS.format();
 
   //Iniciando o SPIFSS (SPI Flash File System)
-  imprimirSerial(true, "Iniciando o SPIFSS (SPI Flash File System)");
+  imprimirSerial("Iniciando o SPIFSS (SPI Flash File System)\n");
   if (SPIFFS.begin())
   {
-    imprimirSerial(true, "Sistema de arquivos SPIFSS montado!");
+    imprimirSerial("Sistema de arquivos SPIFSS montado!\n");
     if (SPIFFS.exists("/config.json"))
     {
       //Arquivo de configuração existe e será lido.
-      imprimirSerial(true, "Abrindo o arquivo de configuracao...");
+      imprimirSerial("Abrindo o arquivo de configuracao...\n");
       File configFile = SPIFFS.open("/config.json", "r");
       if (configFile)
       {
-        imprimirSerial(true, "Arquivo de configuracao aberto.");
+        imprimirSerial("Arquivo de configuracao aberto.\n");
         size_t size = configFile.size();
 
         //Alocando um buffer para armazenar o conteúdo do arquivo.
         std::unique_ptr<char[]> buf(new char[size]);
-
         configFile.readBytes(buf.get(), size);
         DynamicJsonBuffer jsonBuffer;
         JsonObject &json = jsonBuffer.parseObject(buf.get());
@@ -207,23 +194,23 @@ void setup()
         if (json.success())
         {
           //Copiando as variáveis salvas previamente no aquivo json para a memória do ESP.
-          imprimirSerial(true, "arquivo json analisado.");
+          imprimirSerial("arquivo json analisado.\n");
           strcpy(servidor_mqtt, json["servidor_mqtt"]);
           strcpy(servidor_mqtt_porta, json["servidor_mqtt_porta"]);
           strcpy(servidor_mqtt_usuario, json["servidor_mqtt_usuario"]);
           strcpy(servidor_mqtt_senha, json["servidor_mqtt_senha"]);
-          strcpy(mqtt_topico_sub1, json["mqtt_topico_sub1"]);
+          strcpy(mqtt_topico_sub, json["mqtt_topico_sub"]);
         }
         else
         {
-          imprimirSerial(true, "Falha ao ler as configuracoes do arquivo json.");
+          imprimirSerial("Falha ao ler as configuracoes do arquivo json.\n");
         }
       }
     }
   }
   else
   {
-    imprimirSerial(true, "Falha ao montar o sistema de arquivos SPIFSS.");
+    imprimirSerial("Falha ao montar o sistema de arquivos SPIFSS.\n");
   }
   //Fim da leitura do sistema de arquivos SPIFSS
 
@@ -234,7 +221,7 @@ void setup()
   WiFiManagerParameter custom_mqtt_port("port", "Porta", servidor_mqtt_porta, 6);
   WiFiManagerParameter custom_mqtt_user("user", "Usuario", servidor_mqtt_usuario, 20);
   WiFiManagerParameter custom_mqtt_pass("pass", "Senha", servidor_mqtt_senha, 20);
-  WiFiManagerParameter custom_mqtt_topic_sub("topic_sub", "Topico para subscrever", mqtt_topico_sub1, 30);
+  WiFiManagerParameter custom_mqtt_topic_sub("topic_sub", "Topico para subscrever", mqtt_topico_sub, 30);
 
   //Inicialização do WiFiManager. Uma vez iniciado não é necessário mantê-lo em memória.
   WiFiManager wifiManager;
@@ -253,9 +240,9 @@ void setup()
   //Caso não consiga conectar ou não exista ID e senha,
   //cria um access point com o nome "AutoConnectAP" e a senha "senha123"
   //E entra em loop aguardando a configuração de uma rede WiFi válida.
-  if (!wifiManager.autoConnect("Babá Eletrônica", "senha123"))
+  if (!wifiManager.autoConnect("AutoConnectAP", "senha123"))
   {
-    imprimirSerial(true, "Falha ao conectar. Excedeu o tempo limite para conexao.");
+    imprimirSerial("Falha ao conectar. Excedeu o tempo limite para conexao.\n");
     delay(3000);
     //Reinicia o ESP e tenta novamente ou entra em sono profundo (DeepSleep)
     ESP.reset();
@@ -263,31 +250,31 @@ void setup()
   }
 
   //Se chegou até aqui é porque conectou na WiFi!
-  imprimirSerial(true, "Conectado!! :)");
+  imprimirSerial("Conectado!! :)\n");
 
   //Lendo os parâmetros atualizados
   strcpy(servidor_mqtt, custom_mqtt_server.getValue());
   strcpy(servidor_mqtt_porta, custom_mqtt_port.getValue());
   strcpy(servidor_mqtt_usuario, custom_mqtt_user.getValue());
   strcpy(servidor_mqtt_senha, custom_mqtt_pass.getValue());
-  strcpy(mqtt_topico_sub1, custom_mqtt_topic_sub.getValue());
+  strcpy(mqtt_topico_sub, custom_mqtt_topic_sub.getValue());
 
   //Salvando os parâmetros informados na tela web do WiFiManager
   if (precisaSalvar)
   {
-    imprimirSerial(true, "Salvando as configuracoes");
+    imprimirSerial("Salvando as configuracoes\n");
     DynamicJsonBuffer jsonBuffer;
     JsonObject &json = jsonBuffer.createObject();
     json["servidor_mqtt"] = servidor_mqtt;
     json["servidor_mqtt_porta"] = servidor_mqtt_porta;
     json["servidor_mqtt_usuario"] = servidor_mqtt_usuario;
     json["servidor_mqtt_senha"] = servidor_mqtt_senha;
-    json["mqtt_topico_sub"] = mqtt_topico_sub1;
+    json["mqtt_topico_sub"] = mqtt_topico_sub;
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile)
     {
-      imprimirSerial(true, "Houve uma falha ao abrir o arquivo de configuracao para incluir/alterar as configuracoes.");
+      imprimirSerial("Houve uma falha ao abrir o arquivo de configuracao para incluir/alterar as configuracoes.\n");
     }
 
     json.printTo(Serial);
@@ -295,8 +282,8 @@ void setup()
     configFile.close();
   }
 
-  imprimirSerial(false, "IP: ");
-  imprimirSerial(true, WiFi.localIP().toString());
+  imprimirSerial("IP: ");
+  imprimirSerial(WiFi.localIP().toString() + "\n");
 
   //Informando ao client do PubSub a url do servidor e a porta.
   int portaInt = atoi(servidor_mqtt_porta);
@@ -314,11 +301,12 @@ void loop()
   {
     reconectar();
   }
-  client.loop();
-
   verifyStat = digitalRead(pino3);
   if (verifyStat == HIGH)
   {
     cancelaAlerta();
   }
+
+  client.loop();
+  // teste
 }
