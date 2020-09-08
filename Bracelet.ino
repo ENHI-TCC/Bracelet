@@ -17,16 +17,15 @@
 #define servidor_mqtt "192.168.100.33" //URL do servidor MQTT
 #define servidor_mqtt_porta "1883"     //Porta do servidor (a mesma deve ser informada na variável abaixo)
 #define servidor_mqtt_usuario "tcc"    //Usuário
-#define servidor_mqtt_senha "123"      //Senha
+#define servidor_mqtt_senha "tcc123"   //Senha
+
 #define mqtt_topico_sub "bracelet/cry" //Tópico para subscrever o comando a ser dado no pino declarado abaixo
 //Declaração do pino que será utilizado e a memória alocada para armazenar o status deste pino na EEPROM
-#define pino 12  //Pino que executara a acao dado no topico "bracelet/cry"
-#define pino2 14 //Pino que executara a acao dado no topico "bracelet/cry"
-#define pino3 16 //Pino que executara a acao dado no topico "bracelet/cry"
+#define pino 12  //Pino que executara a acao dado no topico "led"
+#define pino2 16 //Pino que executara a acao dado no topico "motor"
+#define pino3 14 //Pino que executara a acao dado no topico "btn"
 
-#define memoria_alocada 6 //Define o quanto sera alocado na EEPROM (valores entre 4 e 4096 bytes)
-
-#define desliga "desliga"
+#define memoria_alocada 4 //Define o quanto sera alocado na EEPROM (valores entre 4 e 4096 bytes)
 
 WiFiClient espClient;           //Instância do WiFiClient
 PubSubClient client(espClient); //Passando a instância do WiFiClient para a instância do PubSubClient
@@ -103,10 +102,9 @@ void gravarStatusPino(uint8_t statusPino)
 
 void cancelaAlerta()
 {
-
-  // client.publish("bracelet/cry", "desliga");
-  client.publish("bracelet/cry", desliga);
-  // imprimirSerial(true, "cancelando alerta");
+  if (client.publish("bracelet/cry", "desliga", true))
+    imprimirSerial("Colocando o pino em stado BAIXO...\n");
+  delay(500);
 }
 
 //Função que será chamada ao receber mensagem do servidor MQTT
@@ -147,6 +145,7 @@ void retorno(char *topico, byte *mensagem, unsigned int tamanho)
   {
     imprimirSerial("Trocando o estado do pino...\n");
     digitalWrite(pino, !digitalRead(pino));
+    digitalWrite(pino2, !digitalRead(pino2));
     gravarStatusPino(digitalRead(pino));
   }
 
@@ -168,6 +167,7 @@ void setup()
 
   //Formatando a memória interna
   //(descomente a linha abaixo enquanto estiver testando e comente ou apague quando estiver pronto)
+
   // SPIFFS.format();
 
   //Iniciando o SPIFSS (SPI Flash File System)
@@ -297,16 +297,17 @@ void setup()
 //Função de repetição (será executado INFINITAMENTE até o ESP ser desligado)
 void loop()
 {
-  if (!client.connected())
-  {
-    reconectar();
-  }
   verifyStat = digitalRead(pino3);
   if (verifyStat == HIGH)
   {
     cancelaAlerta();
   }
-
-  client.loop();
-  // teste
+  if (!client.connected())
+  {
+    reconectar();
+  }
+  if (client.loop())
+  {
+    reconectar();
+  }
 }
