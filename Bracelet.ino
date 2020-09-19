@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////
+//Autors:   Victorai Chemin & Wallace Bescrovaine
+//Descricao: Firmware responsável por controlar a pulseira eletrônica do projeto ENHI
+/////////////////////////////////////////////////
 
 #include <FS.h>          //Esta precisa ser a primeira referência, ou nada dará certo e sua vida será arruinada. kkk
 #include <ESP8266WiFi.h> //https://github.com/esp8266/Arduino
@@ -14,12 +18,13 @@
 #define LF char(10) // Defini quebra de linha LF (line feed)
 
 //Coloque os valores padrões aqui, porém na interface eles poderão ser substituídos.
-#define servidor_mqtt "192.168.100.33" //URL do servidor MQTT
-#define servidor_mqtt_porta "1883"     //Porta do servidor (a mesma deve ser informada na variável abaixo)
-#define servidor_mqtt_usuario "tcc"    //Usuário
-#define servidor_mqtt_senha "tcc123"   //Senha
+#define servidor_mqtt "192.168.100.33"    //URL do servidor MQTT
+#define servidor_mqtt_porta "1883"        //Porta do servidor (a mesma deve ser informada na variável abaixo)
+#define servidor_mqtt_usuario "tccUser"   //Usuário
+#define servidor_mqtt_senha "tccPassword" //Senha
 
 #define mqtt_topico_sub "bracelet/cry" //Tópico para subscrever o comando a ser dado no pino declarado abaixo
+
 //Declaração do pino que será utilizado e a memória alocada para armazenar o status deste pino na EEPROM
 #define pino 12  //Pino que executara a acao dado no topico "led"
 #define pino2 16 //Pino que executara a acao dado no topico "motor"
